@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NotificacionesTurno0900RouteImport } from './routes/notificaciones.turno-0900'
+import { Route as NotificacionesTurnoIdRouteImport } from './routes/notificaciones.$turnoId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,30 +23,43 @@ const NotificacionesTurno0900Route = NotificacionesTurno0900RouteImport.update({
   path: '/notificaciones/turno-0900',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NotificacionesTurnoIdRoute = NotificacionesTurnoIdRouteImport.update({
+  id: '/notificaciones/$turnoId',
+  path: '/notificaciones/$turnoId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
   '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
   '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
   '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/notificaciones/turno-0900'
+  fullPaths: '/' | '/notificaciones/$turnoId' | '/notificaciones/turno-0900'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/notificaciones/turno-0900'
-  id: '__root__' | '/' | '/notificaciones/turno-0900'
+  to: '/' | '/notificaciones/$turnoId' | '/notificaciones/turno-0900'
+  id:
+    | '__root__'
+    | '/'
+    | '/notificaciones/$turnoId'
+    | '/notificaciones/turno-0900'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  NotificacionesTurnoIdRoute: typeof NotificacionesTurnoIdRoute
   NotificacionesTurno0900Route: typeof NotificacionesTurno0900Route
 }
 
@@ -65,11 +79,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotificacionesTurno0900RouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notificaciones/$turnoId': {
+      id: '/notificaciones/$turnoId'
+      path: '/notificaciones/$turnoId'
+      fullPath: '/notificaciones/$turnoId'
+      preLoaderRoute: typeof NotificacionesTurnoIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  NotificacionesTurnoIdRoute: NotificacionesTurnoIdRoute,
   NotificacionesTurno0900Route: NotificacionesTurno0900Route,
 }
 export const routeTree = rootRouteImport

@@ -77,7 +77,7 @@ function NotificationLog() {
 
   const isCovered = turno?.status === "cubierto";
   const isExpired = secondsLeft <= 0 && !isCovered;
-  const confirmedNotif = notificaciones.find((n) => n.estado === "confirmado");
+  const confirmedNotif = notificaciones.find((n: NotificacionRow) => n.estado === "confirmado");
 
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
@@ -147,7 +147,7 @@ function NotificationLog() {
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Pacientes notificados — {notificaciones.length} en lista
           </div>
-          {notificaciones.map((notif) => (
+          {notificaciones.map((notif: NotificacionRow) => (
             <PatientTracker
               key={notif.id}
               notif={notif}
