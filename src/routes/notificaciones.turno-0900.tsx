@@ -213,6 +213,7 @@ function NotificationLog() {
         </div>
         <Link
           to="/"
+          search={{ fecha: new Date().toISOString().split("T")[0] }}
           className="rounded-md border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground hover:bg-muted"
         >
           ← Dashboard
