@@ -243,7 +243,8 @@ function TurnoActions({
   if (uiStatus === "process") {
     return (
       <Link
-        to="/notificaciones/turno-0900"
+        to="/notificaciones/$turnoId"
+        params={{ turnoId: turno.id }}
         className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted"
       >
         Ver estado
