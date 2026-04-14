@@ -332,7 +332,8 @@ function DashboardPanel({ waitlist, turnos }: { waitlist: WaitlistRow[]; turnos:
           {enProceso.map((t) => (
             <Link
               key={t.id}
-              to="/notificaciones/turno-0900"
+              to="/notificaciones/$turnoId"
+              params={{ turnoId: t.id }}
               className="mb-2 block rounded-lg border border-status-process bg-status-process-bg p-2.5 transition-colors hover:opacity-90"
             >
               <div className="text-xs font-medium text-status-process">
