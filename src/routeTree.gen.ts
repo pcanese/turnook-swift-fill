@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as NotificacionesTurno0900RouteImport } from './routes/notificaciones.turno-0900'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NotificacionesTurno0900Route = NotificacionesTurno0900RouteImport.update({
+  id: '/notificaciones/turno-0900',
+  path: '/notificaciones/turno-0900',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/notificaciones/turno-0900': typeof NotificacionesTurno0900Route
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/notificaciones/turno-0900'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/notificaciones/turno-0900'
+  id: '__root__' | '/' | '/notificaciones/turno-0900'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  NotificacionesTurno0900Route: typeof NotificacionesTurno0900Route
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notificaciones/turno-0900': {
+      id: '/notificaciones/turno-0900'
+      path: '/notificaciones/turno-0900'
+      fullPath: '/notificaciones/turno-0900'
+      preLoaderRoute: typeof NotificacionesTurno0900RouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  NotificacionesTurno0900Route: NotificacionesTurno0900Route,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
