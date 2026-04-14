@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 // For MVP: hardcoded medico ID (will come from auth later)
 const DEMO_MEDICO_ID = "b0000000-0000-0000-0000-000000000001";
+const TIMER_MINUTES = 10;
 
 export type TurnoRow = {
   id: string;
@@ -37,7 +38,6 @@ export const getDashboardData = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<DashboardData> => {
     const { fecha } = data;
 
-    // Fetch turnos for the day with patient data
     const { data: turnos, error: turnosError } = await supabase
       .from("turnos")
       .select(`
@@ -55,7 +55,6 @@ export const getDashboardData = createServerFn({ method: "GET" })
       throw new Error("Failed to fetch turnos");
     }
 
-    // Fetch active waitlist
     const { data: waitlist, error: waitlistError } = await supabase
       .from("lista_espera")
       .select(`
@@ -71,7 +70,6 @@ export const getDashboardData = createServerFn({ method: "GET" })
       throw new Error("Failed to fetch waitlist");
     }
 
-    // Fetch medico info
     const { data: medico } = await supabase
       .from("medicos")
       .select("nombre, apellido, especialidad")
@@ -89,20 +87,97 @@ export const getDashboardData = createServerFn({ method: "GET" })
 export const cancelarTurno = createServerFn({ method: "POST" })
   .inputValidator((data: { turnoId: string }) => data)
   .handler(async ({ data }) => {
-    const { error } = await supabase
-      .from("turnos")
-      .update({
-        status: "caido" as any,
-        cancelado_at: new Date().toISOString(),
-      })
-      .eq("id", data.turnoId);
+    const { turnoId } = data;
 
-    if (error) {
-      console.error("Error canceling turno:", error);
+    // 1. Mark turno as "caido" and save original patient
+    const { data: turno, error: turnoError } = await supabase
+      .from("turnos")
+      .select("paciente_id, medico_id")
+      .eq("id", turnoId)
+      .single();
+
+    if (turnoError || !turno) {
+      throw new Error("Turno not found");
+    }
+
+    // Save original patient before clearing
+    const updatePayload: Record<string, unknown> = {
+      status: "caido" as const,
+      cancelado_at: new Date().toISOString(),
+    };
+    if (turno.paciente_id) {
+      updatePayload.paciente_original_id = turno.paciente_id;
+    }
+
+    const { error: updateError } = await supabase
+      .from("turnos")
+      .update(updatePayload as any)
+      .eq("id", turnoId);
+
+    if (updateError) {
+      console.error("Error canceling turno:", updateError);
       throw new Error("Failed to cancel turno");
     }
 
-    return { success: true };
+    // 2. Find top 3 waitlist patients with optin_adelanto = true
+    const { data: waitlistEntries, error: wlError } = await supabase
+      .from("lista_espera")
+      .select(`
+        id, paciente_id,
+        paciente:pacientes!lista_espera_paciente_id_fkey(id, optin_adelanto)
+      `)
+      .eq("medico_id", turno.medico_id)
+      .eq("activo", true)
+      .order("prioridad")
+      .order("created_at")
+      .limit(10);
+
+    if (wlError) {
+      console.error("Error fetching waitlist:", wlError);
+      throw new Error("Failed to fetch waitlist");
+    }
+
+    // Filter for optin patients, take first 3
+    const optinEntries = (waitlistEntries || [])
+      .filter((e: any) => e.paciente?.optin_adelanto === true)
+      .slice(0, 3);
+
+    if (optinEntries.length === 0) {
+      // No patients to notify — mark as sin_cubrir
+      await supabase
+        .from("turnos")
+        .update({ status: "sin_cubrir" as any })
+        .eq("id", turnoId);
+
+      return { success: true, notificaciones: 0 };
+    }
+
+    // 3. Create notificaciones
+    const timerExpira = new Date(Date.now() + TIMER_MINUTES * 60 * 1000).toISOString();
+    const notifRows = optinEntries.map((entry: any, idx: number) => ({
+      turno_id: turnoId,
+      paciente_id: entry.paciente_id,
+      estado: "enviado" as const,
+      orden: idx + 1,
+      timer_expira_at: timerExpira,
+    }));
+
+    const { error: notifError } = await supabase
+      .from("notificaciones")
+      .insert(notifRows as any);
+
+    if (notifError) {
+      console.error("Error creating notificaciones:", notifError);
+      throw new Error("Failed to create notifications");
+    }
+
+    // 4. Update turno to "en_proceso"
+    await supabase
+      .from("turnos")
+      .update({ status: "en_proceso" as any })
+      .eq("id", turnoId);
+
+    return { success: true, notificaciones: optinEntries.length };
   });
 
 export const marcarLibre = createServerFn({ method: "POST" })
