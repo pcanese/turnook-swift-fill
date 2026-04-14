@@ -3,20 +3,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * Design system definition.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
- */
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -58,86 +44,128 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* TurnoOk semantic colors */
+  --color-teal: var(--teal);
+  --color-teal-light: var(--teal-light);
+  --color-teal-lighter: var(--teal-lighter);
+  --color-teal-dark: var(--teal-dark);
+  --color-navy: var(--navy);
+  --color-navy-light: var(--navy-light);
+  --color-status-confirmed: var(--status-confirmed);
+  --color-status-confirmed-bg: var(--status-confirmed-bg);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-fallen: var(--status-fallen);
+  --color-status-fallen-bg: var(--status-fallen-bg);
+  --color-status-process: var(--status-process);
+  --color-status-process-bg: var(--status-process-bg);
+  --color-status-covered: var(--status-covered);
+  --color-status-covered-bg: var(--status-covered-bg);
+  --color-status-free: var(--status-free);
+  --color-status-free-bg: var(--status-free-bg);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
-}
+  --radius: 0.5rem;
 
-.dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  /* Brand */
+  --teal: oklch(0.58 0.14 165);
+  --teal-light: oklch(0.92 0.04 165);
+  --teal-lighter: oklch(0.96 0.02 165);
+  --teal-dark: oklch(0.42 0.08 165);
+  --navy: oklch(0.22 0.04 260);
+  --navy-light: oklch(0.35 0.04 260);
+
+  /* Status */
+  --status-confirmed: oklch(0.42 0.08 165);
+  --status-confirmed-bg: oklch(0.94 0.03 165);
+  --status-pending: oklch(0.55 0.14 75);
+  --status-pending-bg: oklch(0.95 0.04 85);
+  --status-fallen: oklch(0.52 0.18 25);
+  --status-fallen-bg: oklch(0.95 0.03 20);
+  --status-process: oklch(0.50 0.12 250);
+  --status-process-bg: oklch(0.94 0.03 250);
+  --status-covered: oklch(0.50 0.13 140);
+  --status-covered-bg: oklch(0.94 0.04 140);
+  --status-free: oklch(0.60 0.01 260);
+  --status-free-bg: oklch(0.96 0.005 260);
+
+  /* Shadcn base mapped to TurnoOk */
+  --background: oklch(0.985 0.002 260);
+  --foreground: oklch(0.22 0.04 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.04 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.04 260);
+  --primary: oklch(0.58 0.14 165);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.01 260);
+  --secondary-foreground: oklch(0.22 0.04 260);
+  --muted: oklch(0.96 0.005 260);
+  --muted-foreground: oklch(0.55 0.02 260);
+  --accent: oklch(0.94 0.03 165);
+  --accent-foreground: oklch(0.30 0.06 165);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.92 0.005 260);
+  --input: oklch(0.92 0.005 260);
+  --ring: oklch(0.58 0.14 165);
+  --chart-1: oklch(0.58 0.14 165);
+  --chart-2: oklch(0.55 0.14 75);
+  --chart-3: oklch(0.50 0.12 250);
+  --chart-4: oklch(0.50 0.13 140);
+  --chart-5: oklch(0.52 0.18 25);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.22 0.04 260);
+  --sidebar-primary: oklch(0.58 0.14 165);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.94 0.03 165);
+  --sidebar-accent-foreground: oklch(0.30 0.06 165);
+  --sidebar-border: oklch(0.92 0.005 260);
+  --sidebar-ring: oklch(0.58 0.14 165);
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
-
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
   }
+}
+
+/* Status badge variants */
+.badge-confirmed { background-color: var(--status-confirmed-bg); color: var(--status-confirmed); }
+.badge-pending { background-color: var(--status-pending-bg); color: var(--status-pending); }
+.badge-fallen { background-color: var(--status-fallen-bg); color: var(--status-fallen); }
+.badge-process { background-color: var(--status-process-bg); color: var(--status-process); }
+.badge-covered { background-color: var(--status-covered-bg); color: var(--status-covered); }
+.badge-free { background-color: var(--status-free-bg); color: var(--status-free); }
+
+/* Accent colors for turno rows */
+.accent-confirmed { background-color: var(--teal); }
+.accent-pending { background-color: var(--status-pending); }
+.accent-fallen { background-color: var(--status-fallen); }
+.accent-process { background-color: var(--status-process); }
+.accent-covered { background-color: var(--status-covered); }
+.accent-free { background-color: oklch(0.75 0.01 260); }
+
+/* Pulse animation for active notifications */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Timer bar animation */
+@keyframes timer-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
 }
