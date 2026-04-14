@@ -72,7 +72,7 @@ function Dashboard() {
   };
 
   const filteredTurnos = useMemo(() => {
-    return data.turnos.filter((t) => {
+    return data.turnos.filter((t: TurnoRow) => {
       const uiStatus = statusDbToUi[t.status] || "free";
       if (filter === "all") return true;
       if (filter === "fallen") return uiStatus === "fallen";
@@ -83,9 +83,9 @@ function Dashboard() {
 
   const metrics = useMemo(() => {
     const total = data.turnos.length;
-    const confirmados = data.turnos.filter((t) => t.status === "confirmado").length;
-    const caidos = data.turnos.filter((t) => ["caido", "sin_cubrir"].includes(t.status)).length;
-    const cubiertos = data.turnos.filter((t) => t.status === "cubierto").length;
+    const confirmados = data.turnos.filter((t: TurnoRow) => t.status === "confirmado").length;
+    const caidos = data.turnos.filter((t: TurnoRow) => ["caido", "sin_cubrir"].includes(t.status)).length;
+    const cubiertos = data.turnos.filter((t: TurnoRow) => t.status === "cubierto").length;
     return { total, confirmados, caidos, cubiertos };
   }, [data.turnos]);
 
