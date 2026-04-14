@@ -144,7 +144,7 @@ function Dashboard() {
         <MetricCard label="Turnos confirmados" value={metrics.confirmados} sub={`de ${metrics.total} totales`} />
         <MetricCard label="Caídos hoy" value={metrics.caidos} sub="" valueColor="pending" />
         <MetricCard label="Recuperados hoy" value={metrics.cubiertos} sub={`$${(metrics.cubiertos * 40000).toLocaleString("es-AR")} recuperados`} valueColor="teal" />
-        <MetricCard label="En proceso" value={data.turnos.filter((t) => t.status === "en_proceso").length} sub="Buscando reemplazo" valueColor="default" />
+        <MetricCard label="En proceso" value={data.turnos.filter((t: TurnoRow) => t.status === "en_proceso").length} sub="Buscando reemplazo" valueColor="default" />
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
@@ -174,7 +174,7 @@ function Dashboard() {
             No hay turnos con este filtro
           </div>
         ) : (
-          filteredTurnos.map((turno) => {
+          filteredTurnos.map((turno: TurnoRow) => {
             const uiStatus = statusDbToUi[turno.status] || "free";
             const accent = accentMap[uiStatus];
             const pacienteName = turno.paciente
