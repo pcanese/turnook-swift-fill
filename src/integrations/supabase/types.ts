@@ -148,6 +148,57 @@ export type Database = {
           },
         ]
       }
+      notificaciones: {
+        Row: {
+          created_at: string
+          estado: Database["public"]["Enums"]["notificacion_estado"]
+          id: string
+          orden: number
+          paciente_id: string
+          respondido_at: string | null
+          timer_expira_at: string
+          turno_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          estado?: Database["public"]["Enums"]["notificacion_estado"]
+          id?: string
+          orden?: number
+          paciente_id: string
+          respondido_at?: string | null
+          timer_expira_at: string
+          turno_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          estado?: Database["public"]["Enums"]["notificacion_estado"]
+          id?: string
+          orden?: number
+          paciente_id?: string
+          respondido_at?: string | null
+          timer_expira_at?: string
+          turno_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notificaciones_paciente_id_fkey"
+            columns: ["paciente_id"]
+            isOneToOne: false
+            referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notificaciones_turno_id_fkey"
+            columns: ["turno_id"]
+            isOneToOne: false
+            referencedRelation: "turnos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pacientes: {
         Row: {
           apellido: string
@@ -280,6 +331,14 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      notificacion_estado:
+        | "enviado"
+        | "entregado"
+        | "leido"
+        | "confirmado"
+        | "rechazado"
+        | "expirado"
+        | "cancelado"
       turno_status:
         | "confirmado"
         | "pendiente"
@@ -415,6 +474,15 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      notificacion_estado: [
+        "enviado",
+        "entregado",
+        "leido",
+        "confirmado",
+        "rechazado",
+        "expirado",
+        "cancelado",
+      ],
       turno_status: [
         "confirmado",
         "pendiente",
