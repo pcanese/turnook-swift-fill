@@ -81,6 +81,20 @@ export const confirmarTurno = createServerFn({ method: "POST" })
       .neq("id", data.notificacionId)
       .in("estado", ["enviado", "entregado", "leido"] as any);
 
+    // Get patient name for the banner
+    const { data: paciente } = await supabase
+      .from("pacientes")
+      .select("nombre, apellido")
+      .eq("id", data.pacienteId)
+      .single();
+
+    // Get turno hora
+    const { data: turno } = await supabase
+      .from("turnos")
+      .select("hora")
+      .eq("id", data.turnoId)
+      .single();
+
     // Update turno as covered
     await supabase
       .from("turnos")
@@ -92,5 +106,63 @@ export const confirmarTurno = createServerFn({ method: "POST" })
       } as any)
       .eq("id", data.turnoId);
 
-    return { success: true };
+    return {
+      success: true,
+      hora: turno?.hora?.slice(0, 5) || "",
+      pacienteNombre: paciente ? `${paciente.nombre} ${paciente.apellido}` : "",
+    };
+  });
+
+export const procesarExpiraciones = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const now = new Date().toISOString();
+
+    // Find expired notifications
+    const { data: expired, error } = await supabase
+      .from("notificaciones")
+      .select("id, turno_id")
+      .in("estado", ["enviado", "entregado", "leido"] as any)
+      .lt("timer_expira_at", now);
+
+    if (error || !expired || expired.length === 0) {
+      return { expired: 0, turnosSinCubrir: 0 };
+    }
+
+    // Mark as expirado
+    const expiredIds = expired.map((e) => e.id);
+    await supabase
+      .from("notificaciones")
+      .update({ estado: "expirado" as any })
+      .in("id", expiredIds);
+
+    // Check which turnos have ALL notifications expired/rejected (none confirmed)
+    const turnoIds = [...new Set(expired.map((e) => e.turno_id))];
+    let turnosSinCubrir = 0;
+
+    for (const turnoId of turnoIds) {
+      const { data: remaining } = await supabase
+        .from("notificaciones")
+        .select("id")
+        .eq("turno_id", turnoId)
+        .in("estado", ["enviado", "entregado", "leido", "confirmado"] as any);
+
+      if (!remaining || remaining.length === 0) {
+        // No active or confirmed notifications — mark turno as sin_cubrir
+        const { data: turnoCheck } = await supabase
+          .from("turnos")
+          .select("status, hora")
+          .eq("id", turnoId)
+          .single();
+
+        if (turnoCheck && turnoCheck.status === "en_proceso") {
+          await supabase
+            .from("turnos")
+            .update({ status: "sin_cubrir" as any })
+            .eq("id", turnoId);
+          turnosSinCubrir++;
+        }
+      }
+    }
+
+    return { expired: expiredIds.length, turnosSinCubrir };
   });
