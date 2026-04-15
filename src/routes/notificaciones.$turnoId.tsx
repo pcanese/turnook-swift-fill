@@ -1,9 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppTopbar } from "@/components/AppTopbar";
 import { useState, useEffect, useCallback } from "react";
 import {
   getNotificaciones,
   confirmarTurno,
+  procesarExpiraciones,
   type NotificacionRow,
   type TurnoNotifContext,
 } from "@/utils/notificaciones.functions";
@@ -48,13 +49,15 @@ function getSteps(notif: NotificacionRow): StepState[] {
 function NotificationLog() {
   const initialData = Route.useLoaderData();
   const { turnoId } = Route.useParams();
+  const navigate = useNavigate();
   const [data, setData] = useState(initialData);
   const { turno, notificaciones } = data;
 
-  // Poll every 3 seconds
+  // Poll every 3 seconds + check expirations
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
+        await procesarExpiraciones();
         const fresh = await getNotificaciones({ data: { turnoId } });
         setData(fresh);
       } catch (e) {
@@ -76,7 +79,8 @@ function NotificationLog() {
   }, [timerExpira]);
 
   const isCovered = turno?.status === "cubierto";
-  const isExpired = secondsLeft <= 0 && !isCovered;
+  const isSinCubrir = turno?.status === "sin_cubrir";
+  const isExpired = (secondsLeft <= 0 && !isCovered) || isSinCubrir;
   const confirmedNotif = notificaciones.find((n: NotificacionRow) => n.estado === "confirmado");
 
   const minutes = Math.floor(secondsLeft / 60);
@@ -87,13 +91,21 @@ function NotificationLog() {
 
   const handleSimConfirm = useCallback(async (notif: NotificacionRow) => {
     try {
-      await confirmarTurno({ data: { notificacionId: notif.id, turnoId, pacienteId: notif.paciente.id } });
-      const fresh = await getNotificaciones({ data: { turnoId } });
-      setData(fresh);
+      const result = await confirmarTurno({ data: { notificacionId: notif.id, turnoId, pacienteId: notif.paciente.id } });
+      // Redirect to dashboard with success banner
+      navigate({
+        to: "/",
+        search: {
+          fecha: turno?.fecha || new Date().toISOString().split("T")[0],
+          banner: "cubierto",
+          bannerHora: result.hora,
+          bannerPaciente: result.pacienteNombre,
+        } as any,
+      });
     } catch (e) {
       console.error("Error confirming:", e);
     }
-  }, [turnoId]);
+  }, [turnoId, turno?.fecha, navigate]);
 
   const originalName = turno?.paciente_original
     ? `${turno.paciente_original.nombre} ${turno.paciente_original.apellido}`
@@ -101,17 +113,18 @@ function NotificationLog() {
 
   const overallStatus = isCovered
     ? `Turno cubierto por ${confirmedNotif?.paciente.nombre} ${confirmedNotif?.paciente.apellido[0]}.`
-    : isExpired
-      ? "Timer expirado — sin respuesta"
-      : "Buscando reemplazo...";
+    : isSinCubrir
+      ? "Sin cubrir — nadie confirmó"
+      : isExpired
+        ? "Timer expirado — sin respuesta"
+        : "Buscando reemplazo...";
 
   const statusClass = isCovered
     ? "border-status-covered bg-status-covered-bg text-status-covered"
-    : isExpired
+    : isExpired || isSinCubrir
       ? "border-status-fallen bg-status-fallen-bg text-status-fallen"
       : "border-status-process bg-status-process-bg text-status-process";
 
-  // Build log entries from notificaciones
   const logs = buildLogs(notificaciones, turno);
 
   return (
@@ -171,14 +184,14 @@ function NotificationLog() {
               <span className="text-xs font-medium text-foreground">Tiempo restante</span>
               <span className="text-[11px] text-muted-foreground">10 min</span>
             </div>
-            <div className={`text-center text-[28px] font-medium tabular-nums ${secondsLeft < 120 ? "text-status-fallen" : "text-foreground"}`}>
-              {isCovered ? "✓" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
+            <div className={`text-center text-[28px] font-medium tabular-nums ${isCovered ? "text-status-covered" : secondsLeft < 120 ? "text-status-fallen" : "text-foreground"}`}>
+              {isCovered ? "✓" : isSinCubrir ? "✕" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
             </div>
             <div className="mb-1.5 mt-2 h-[5px] overflow-hidden rounded-full bg-muted">
-              <div className={`h-full rounded-full transition-all duration-500 ${timerColor}`} style={{ width: `${isCovered ? 100 : timerPercent}%` }} />
+              <div className={`h-full rounded-full transition-all duration-500 ${isCovered ? "bg-status-covered" : timerColor}`} style={{ width: `${isCovered ? 100 : timerPercent}%` }} />
             </div>
             <div className="text-center text-[11px] text-muted-foreground">
-              {isCovered ? "Turno cubierto" : isExpired ? "Timer expirado" : "Si nadie confirma, se notifica al médico"}
+              {isCovered ? "Turno cubierto" : isSinCubrir ? "Sin cubrir" : isExpired ? "Timer expirado" : "Si nadie confirma, se notifica al médico"}
             </div>
           </div>
 
@@ -329,7 +342,7 @@ function PatientTracker({
               "text-muted-foreground"
             }`}
           >
-            {steps[i] === "ok" ? "Confirmó" : steps[i] === "off" ? "Turno tomado" : label}
+            {steps[i] === "ok" ? "Confirmó" : steps[i] === "off" ? (notif.estado === "expirado" ? "Expirado" : "Turno tomado") : label}
           </span>
         ))}
       </div>

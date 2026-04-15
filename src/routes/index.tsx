@@ -2,12 +2,16 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge, type TurnoStatus } from "@/components/StatusBadge";
-import { useState, useMemo } from "react";
-import { getDashboardData, cancelarTurno, type TurnoRow, type WaitlistRow } from "@/utils/dashboard.functions";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { getDashboardData, cancelarTurno, marcarLibre, type TurnoRow, type WaitlistRow } from "@/utils/dashboard.functions";
+import { procesarExpiraciones } from "@/utils/notificaciones.functions";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search) => ({
     fecha: (search.fecha as string) || new Date().toISOString().split("T")[0],
+    banner: (search.banner as string) || undefined,
+    bannerHora: (search.bannerHora as string) || undefined,
+    bannerPaciente: (search.bannerPaciente as string) || undefined,
   }),
   loaderDeps: ({ search: { fecha } }) => ({ fecha }),
   loader: ({ deps: { fecha } }) => getDashboardData({ data: { fecha } }),
@@ -58,14 +62,72 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().split("T")[0];
 }
 
+type BannerState = {
+  type: "cubierto" | "sin_cubrir";
+  hora: string;
+  paciente?: string;
+  turnoId?: string;
+} | null;
+
 function Dashboard() {
   const data = Route.useLoaderData();
-  const { fecha } = Route.useSearch();
+  const search = Route.useSearch();
+  const { fecha } = search;
   const router = useRouter();
+  const navigate = Route.useNavigate();
   const [filter, setFilter] = useState<FilterType>("all");
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [banner, setBanner] = useState<BannerState>(null);
 
-  const navigate = Route.useNavigate();
+  // Show cubierto banner from URL params (S09)
+  useEffect(() => {
+    if (search.banner === "cubierto" && search.bannerHora) {
+      setBanner({
+        type: "cubierto",
+        hora: search.bannerHora,
+        paciente: search.bannerPaciente,
+      });
+      // Clean URL params
+      navigate({ search: { fecha }, replace: true });
+    }
+  }, [search.banner, search.bannerHora, search.bannerPaciente, fecha, navigate]);
+
+  // Auto-dismiss cubierto banner after 5s
+  useEffect(() => {
+    if (banner?.type === "cubierto") {
+      const timeout = setTimeout(() => setBanner(null), 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [banner]);
+
+  // Detect sin_cubrir turnos for S10 banner
+  useEffect(() => {
+    const sinCubrir = data.turnos.find(
+      (t: TurnoRow) => t.status === "sin_cubrir" && !banner
+    );
+    if (sinCubrir) {
+      setBanner({
+        type: "sin_cubrir",
+        hora: sinCubrir.hora.slice(0, 5),
+        turnoId: sinCubrir.id,
+      });
+    }
+  }, [data.turnos]);
+
+  // Poll for expirations every 30s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const result = await procesarExpiraciones();
+        if (result.turnosSinCubrir > 0) {
+          router.invalidate();
+        }
+      } catch (e) {
+        console.error("Expiration check error:", e);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [router]);
 
   const goToDate = (newFecha: string) => {
     navigate({ search: { fecha: newFecha } });
@@ -101,12 +163,92 @@ function Dashboard() {
     }
   };
 
+  const handleReintentar = useCallback(async (turnoId: string) => {
+    setBanner(null);
+    setCancelingId(turnoId);
+    try {
+      await cancelarTurno({ data: { turnoId } });
+      router.invalidate();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCancelingId(null);
+    }
+  }, [router]);
+
+  const handleMarcarLibre = useCallback(async (turnoId: string) => {
+    setBanner(null);
+    try {
+      await marcarLibre({ data: { turnoId } });
+      router.invalidate();
+    } catch (e) {
+      console.error(e);
+    }
+  }, [router]);
+
   const medicoLabel = data.medico
     ? `Dr. ${data.medico.nombre} ${data.medico.apellido} · ${data.medico.especialidad}`
     : "";
 
   return (
     <AppLayout rightPanel={<DashboardPanel waitlist={data.waitlist} turnos={data.turnos} />}>
+      {/* S09 Banner — Turno cubierto */}
+      {banner?.type === "cubierto" && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-status-covered bg-status-covered-bg px-4 py-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-status-covered">
+              <circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M5.5 9l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-sm font-medium text-status-covered">
+              Turno de las {banner.hora} cubierto por {banner.paciente}.
+            </span>
+          </div>
+          <button onClick={() => setBanner(null)} className="text-status-covered hover:opacity-70">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* S10 Banner — Hueco sin cubrir */}
+      {banner?.type === "sin_cubrir" && (
+        <div className="mb-3 rounded-lg border border-status-fallen bg-status-fallen-bg px-4 py-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-status-fallen">
+                <circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M9 5.5v4M9 12v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <span className="text-sm font-medium text-status-fallen">
+                No hubo confirmación. El turno de las {banner.hora} sigue disponible.
+              </span>
+            </div>
+          </div>
+          <div className="mt-2.5 flex gap-2">
+            <button
+              onClick={() => banner.turnoId && handleReintentar(banner.turnoId)}
+              className="rounded-md border border-teal bg-teal-lighter px-3 py-1.5 text-xs font-medium text-teal-dark hover:opacity-90"
+            >
+              Reintentar
+            </button>
+            <button
+              onClick={() => banner.turnoId && handleMarcarLibre(banner.turnoId)}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            >
+              Marcar como libre
+            </button>
+            <button
+              onClick={() => setBanner(null)}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+            >
+              Ignorar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-base font-medium text-foreground">Agenda del día</h1>
@@ -221,7 +363,7 @@ function buildDetail(turno: TurnoRow): string {
   } else if (turno.status === "en_proceso" && turno.cancelado_at) {
     parts.push("Notificando lista de espera");
   } else if (turno.status === "sin_cubrir") {
-    parts.push("Notificaciones enviadas sin respuesta");
+    parts.push("Sin cubrir — ningún paciente confirmó");
   } else if (turno.motivo) {
     parts.push(turno.motivo);
   }
@@ -261,6 +403,18 @@ function TurnoActions({
       >
         {canceling ? "Cancelando..." : "Cancelar"}
       </button>
+    );
+  }
+
+  if (uiStatus === "fallen" && turno.status === "sin_cubrir") {
+    return (
+      <Link
+        to="/notificaciones/$turnoId"
+        params={{ turnoId: turno.id }}
+        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted"
+      >
+        Ver detalle
+      </Link>
     );
   }
 
