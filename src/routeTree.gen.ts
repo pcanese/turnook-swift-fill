@@ -9,9 +9,45 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PacientesRouteImport } from './routes/pacientes'
+import { Route as NotificacionesRouteImport } from './routes/notificaciones_'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ListaEsperaRouteImport } from './routes/lista-espera'
+import { Route as HistorialRouteImport } from './routes/historial'
+import { Route as ConfiguracionRouteImport } from './routes/configuracion'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NotificacionesTurnoIdRouteImport } from './routes/notificaciones.$turnoId'
 
+const PacientesRoute = PacientesRouteImport.update({
+  id: '/pacientes',
+  path: '/pacientes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificacionesRoute = NotificacionesRouteImport.update({
+  id: '/notificaciones_',
+  path: '/notificaciones',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ListaEsperaRoute = ListaEsperaRouteImport.update({
+  id: '/lista-espera',
+  path: '/lista-espera',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistorialRoute = HistorialRouteImport.update({
+  id: '/historial',
+  path: '/historial',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfiguracionRoute = ConfiguracionRouteImport.update({
+  id: '/configuracion',
+  path: '/configuracion',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -25,32 +61,123 @@ const NotificacionesTurnoIdRoute = NotificacionesTurnoIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/configuracion': typeof ConfiguracionRoute
+  '/historial': typeof HistorialRoute
+  '/lista-espera': typeof ListaEsperaRoute
+  '/login': typeof LoginRoute
+  '/notificaciones': typeof NotificacionesRoute
+  '/pacientes': typeof PacientesRoute
   '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/configuracion': typeof ConfiguracionRoute
+  '/historial': typeof HistorialRoute
+  '/lista-espera': typeof ListaEsperaRoute
+  '/login': typeof LoginRoute
+  '/notificaciones': typeof NotificacionesRoute
+  '/pacientes': typeof PacientesRoute
   '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/configuracion': typeof ConfiguracionRoute
+  '/historial': typeof HistorialRoute
+  '/lista-espera': typeof ListaEsperaRoute
+  '/login': typeof LoginRoute
+  '/notificaciones_': typeof NotificacionesRoute
+  '/pacientes': typeof PacientesRoute
   '/notificaciones/$turnoId': typeof NotificacionesTurnoIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/notificaciones/$turnoId'
+  fullPaths:
+    | '/'
+    | '/configuracion'
+    | '/historial'
+    | '/lista-espera'
+    | '/login'
+    | '/notificaciones'
+    | '/pacientes'
+    | '/notificaciones/$turnoId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/notificaciones/$turnoId'
-  id: '__root__' | '/' | '/notificaciones/$turnoId'
+  to:
+    | '/'
+    | '/configuracion'
+    | '/historial'
+    | '/lista-espera'
+    | '/login'
+    | '/notificaciones'
+    | '/pacientes'
+    | '/notificaciones/$turnoId'
+  id:
+    | '__root__'
+    | '/'
+    | '/configuracion'
+    | '/historial'
+    | '/lista-espera'
+    | '/login'
+    | '/notificaciones_'
+    | '/pacientes'
+    | '/notificaciones/$turnoId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConfiguracionRoute: typeof ConfiguracionRoute
+  HistorialRoute: typeof HistorialRoute
+  ListaEsperaRoute: typeof ListaEsperaRoute
+  LoginRoute: typeof LoginRoute
+  NotificacionesRoute: typeof NotificacionesRoute
+  PacientesRoute: typeof PacientesRoute
   NotificacionesTurnoIdRoute: typeof NotificacionesTurnoIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/pacientes': {
+      id: '/pacientes'
+      path: '/pacientes'
+      fullPath: '/pacientes'
+      preLoaderRoute: typeof PacientesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notificaciones_': {
+      id: '/notificaciones_'
+      path: '/notificaciones'
+      fullPath: '/notificaciones'
+      preLoaderRoute: typeof NotificacionesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lista-espera': {
+      id: '/lista-espera'
+      path: '/lista-espera'
+      fullPath: '/lista-espera'
+      preLoaderRoute: typeof ListaEsperaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/historial': {
+      id: '/historial'
+      path: '/historial'
+      fullPath: '/historial'
+      preLoaderRoute: typeof HistorialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/configuracion': {
+      id: '/configuracion'
+      path: '/configuracion'
+      fullPath: '/configuracion'
+      preLoaderRoute: typeof ConfiguracionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -70,6 +197,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConfiguracionRoute: ConfiguracionRoute,
+  HistorialRoute: HistorialRoute,
+  ListaEsperaRoute: ListaEsperaRoute,
+  LoginRoute: LoginRoute,
+  NotificacionesRoute: NotificacionesRoute,
+  PacientesRoute: PacientesRoute,
   NotificacionesTurnoIdRoute: NotificacionesTurnoIdRoute,
 }
 export const routeTree = rootRouteImport

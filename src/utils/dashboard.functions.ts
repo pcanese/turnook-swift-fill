@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 
-// For MVP: hardcoded medico ID (will come from auth later)
 const DEMO_MEDICO_ID = "b0000000-0000-0000-0000-000000000001";
 const TIMER_MINUTES = 10;
 
@@ -26,17 +25,84 @@ export type WaitlistRow = {
   paciente: { id: string; nombre: string; apellido: string; obra_social: string | null };
 };
 
+export type MonthlyMetrics = {
+  caidos: number;
+  recuperados: number;
+  tasa: number;
+  montoRecuperado: number;
+};
+
 export type DashboardData = {
   turnos: TurnoRow[];
   waitlist: WaitlistRow[];
   medico: { nombre: string; apellido: string; especialidad: string } | null;
   fecha: string;
+  monthlyMetrics: MonthlyMetrics;
+  isWeekend: boolean;
 };
+
+// Bug 2: Generate turnos for a weekday if none exist
+async function ensureTurnosExist(fecha: string, medicoId: string): Promise<boolean> {
+  const d = new Date(fecha + "T12:00:00");
+  const dayOfWeek = d.getDay();
+  if (dayOfWeek === 0 || dayOfWeek === 6) return false; // weekend
+
+  const { count } = await supabase
+    .from("turnos")
+    .select("id", { count: "exact", head: true })
+    .eq("medico_id", medicoId)
+    .eq("fecha", fecha);
+
+  if (count && count > 0) return true;
+
+  // Generate 8:00-12:00 every 30 min
+  const slots: { hora: string; fecha: string; medico_id: string; status: string }[] = [];
+  for (let h = 8; h < 12; h++) {
+    for (const m of [0, 30]) {
+      slots.push({
+        hora: `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+        fecha,
+        medico_id: medicoId,
+        status: "libre",
+      });
+    }
+  }
+
+  await supabase.from("turnos").insert(slots as any);
+  return true;
+}
+
+// Bug 7: Monthly metrics from DB
+async function fetchMonthlyMetrics(medicoId: string): Promise<MonthlyMetrics> {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+
+  const { data: monthTurnos } = await supabase
+    .from("turnos")
+    .select("status")
+    .eq("medico_id", medicoId)
+    .gte("fecha", firstDay)
+    .lte("fecha", lastDay);
+
+  const all = monthTurnos || [];
+  const caidos = all.filter((t) => ["caido", "sin_cubrir", "en_proceso", "cubierto"].includes(t.status)).length;
+  const recuperados = all.filter((t) => t.status === "cubierto").length;
+  const tasa = caidos > 0 ? Math.round((recuperados / caidos) * 100) : 0;
+
+  return { caidos, recuperados, tasa, montoRecuperado: recuperados * 40000 };
+}
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .inputValidator((data: { fecha: string }) => data)
   .handler(async ({ data }): Promise<DashboardData> => {
     const { fecha } = data;
+    const d = new Date(fecha + "T12:00:00");
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
+    if (!isWeekend) {
+      await ensureTurnosExist(fecha, DEMO_MEDICO_ID);
+    }
 
     const { data: turnos, error: turnosError } = await supabase
       .from("turnos")
@@ -76,11 +142,15 @@ export const getDashboardData = createServerFn({ method: "GET" })
       .eq("id", DEMO_MEDICO_ID)
       .single();
 
+    const monthlyMetrics = await fetchMonthlyMetrics(DEMO_MEDICO_ID);
+
     return {
       turnos: (turnos || []) as unknown as TurnoRow[],
       waitlist: (waitlist || []) as unknown as WaitlistRow[],
       medico: medico || null,
       fecha,
+      monthlyMetrics,
+      isWeekend,
     };
   });
 
@@ -89,7 +159,6 @@ export const cancelarTurno = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { turnoId } = data;
 
-    // 1. Mark turno as "caido" and save original patient
     const { data: turno, error: turnoError } = await supabase
       .from("turnos")
       .select("paciente_id, medico_id")
@@ -100,7 +169,6 @@ export const cancelarTurno = createServerFn({ method: "POST" })
       throw new Error("Turno not found");
     }
 
-    // Save original patient before clearing
     const updatePayload: Record<string, unknown> = {
       status: "caido" as const,
       cancelado_at: new Date().toISOString(),
@@ -114,13 +182,10 @@ export const cancelarTurno = createServerFn({ method: "POST" })
       .update(updatePayload as any)
       .eq("id", turnoId);
 
-    if (updateError) {
-      console.error("Error canceling turno:", updateError);
-      throw new Error("Failed to cancel turno");
-    }
+    if (updateError) throw new Error("Failed to cancel turno");
 
-    // 2. Find top 3 waitlist patients with optin_adelanto = true
-    const { data: waitlistEntries, error: wlError } = await supabase
+    // Find top 3 waitlist patients with optin_adelanto = true
+    const { data: waitlistEntries } = await supabase
       .from("lista_espera")
       .select(`
         id, paciente_id,
@@ -132,27 +197,18 @@ export const cancelarTurno = createServerFn({ method: "POST" })
       .order("created_at")
       .limit(10);
 
-    if (wlError) {
-      console.error("Error fetching waitlist:", wlError);
-      throw new Error("Failed to fetch waitlist");
-    }
-
-    // Filter for optin patients, take first 3
     const optinEntries = (waitlistEntries || [])
       .filter((e: any) => e.paciente?.optin_adelanto === true)
       .slice(0, 3);
 
     if (optinEntries.length === 0) {
-      // No patients to notify — mark as sin_cubrir
       await supabase
         .from("turnos")
         .update({ status: "sin_cubrir" as any })
         .eq("id", turnoId);
-
       return { success: true, notificaciones: 0 };
     }
 
-    // 3. Create notificaciones
     const timerExpira = new Date(Date.now() + TIMER_MINUTES * 60 * 1000).toISOString();
     const notifRows = optinEntries.map((entry: any, idx: number) => ({
       turno_id: turnoId,
@@ -166,12 +222,8 @@ export const cancelarTurno = createServerFn({ method: "POST" })
       .from("notificaciones")
       .insert(notifRows as any);
 
-    if (notifError) {
-      console.error("Error creating notificaciones:", notifError);
-      throw new Error("Failed to create notifications");
-    }
+    if (notifError) throw new Error("Failed to create notifications");
 
-    // 4. Update turno to "en_proceso"
     await supabase
       .from("turnos")
       .update({ status: "en_proceso" as any })
@@ -191,10 +243,38 @@ export const marcarLibre = createServerFn({ method: "POST" })
       })
       .eq("id", data.turnoId);
 
-    if (error) {
-      console.error("Error marking turno as libre:", error);
-      throw new Error("Failed to mark turno as libre");
+    if (error) throw new Error("Failed to mark turno as libre");
+    return { success: true };
+  });
+
+// Bug 1: Search pacientes for assignment modal
+export const searchPacientes = createServerFn({ method: "GET" })
+  .inputValidator((data: { query: string }) => data)
+  .handler(async ({ data }) => {
+    const q = data.query.trim();
+    let query = supabase
+      .from("pacientes")
+      .select("id, nombre, apellido, obra_social")
+      .limit(10);
+
+    if (q) {
+      query = query.or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%`);
     }
 
+    const { data: pacientes, error } = await query.order("apellido");
+    if (error) throw new Error("Failed to search pacientes");
+    return (pacientes || []) as { id: string; nombre: string; apellido: string; obra_social: string | null }[];
+  });
+
+// Bug 1: Assign patient to turno
+export const asignarPaciente = createServerFn({ method: "POST" })
+  .inputValidator((data: { turnoId: string; pacienteId: string }) => data)
+  .handler(async ({ data }) => {
+    const { error } = await supabase
+      .from("turnos")
+      .update({ paciente_id: data.pacienteId, status: "pendiente" as any } as any)
+      .eq("id", data.turnoId);
+
+    if (error) throw new Error("Failed to assign paciente");
     return { success: true };
   });

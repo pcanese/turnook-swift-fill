@@ -3,8 +3,29 @@ import { AppLayout } from "@/components/AppLayout";
 import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge, type TurnoStatus } from "@/components/StatusBadge";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { getDashboardData, cancelarTurno, marcarLibre, type TurnoRow, type WaitlistRow } from "@/utils/dashboard.functions";
+import {
+  getDashboardData,
+  cancelarTurno,
+  marcarLibre,
+  searchPacientes,
+  asignarPaciente,
+  type TurnoRow,
+  type WaitlistRow,
+  type MonthlyMetrics,
+} from "@/utils/dashboard.functions";
 import { procesarExpiraciones } from "@/utils/notificaciones.functions";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search) => ({
@@ -16,6 +37,8 @@ export const Route = createFileRoute("/")({
   loaderDeps: ({ search: { fecha } }) => ({ fecha }),
   loader: ({ deps: { fecha } }) => getDashboardData({ data: { fecha } }),
   component: Dashboard,
+  pendingComponent: DashboardSkeleton,
+  errorComponent: DashboardError,
   head: () => ({
     meta: [
       { title: "TurnoOk — Dashboard" },
@@ -69,6 +92,41 @@ type BannerState = {
   turnoId?: string;
 } | null;
 
+// Bug 9: Skeleton loader
+function DashboardSkeleton() {
+  return (
+    <AppLayout>
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-96 rounded-xl" />
+      </div>
+    </AppLayout>
+  );
+}
+
+// Bug 9: Error component
+function DashboardError({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+  return (
+    <AppLayout>
+      <div className="flex flex-col items-center justify-center py-16">
+        <p className="text-sm text-destructive">No se pudieron cargar los datos.</p>
+        <button
+          onClick={() => { router.invalidate(); reset(); }}
+          className="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Reintentar
+        </button>
+      </div>
+    </AppLayout>
+  );
+}
+
 function Dashboard() {
   const data = Route.useLoaderData();
   const search = Route.useSearch();
@@ -79,6 +137,27 @@ function Dashboard() {
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState>(null);
 
+  // Bug 11: Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{ turnoId: string; nombre: string; hora: string } | null>(null);
+
+  // Bug 1: Assignment modal state
+  const [assignModal, setAssignModal] = useState<{ turnoId: string } | null>(null);
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assignResults, setAssignResults] = useState<{ id: string; nombre: string; apellido: string; obra_social: string | null }[]>([]);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [selectedPaciente, setSelectedPaciente] = useState<string | null>(null);
+
+  // Bug 10: Track dismissed banners in sessionStorage
+  const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = sessionStorage.getItem("turnook_dismissed_banners");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   // Show cubierto banner from URL params (S09)
   useEffect(() => {
     if (search.banner === "cubierto" && search.bannerHora) {
@@ -87,7 +166,6 @@ function Dashboard() {
         hora: search.bannerHora,
         paciente: search.bannerPaciente,
       });
-      // Clean URL params
       navigate({ search: { fecha }, replace: true });
     }
   }, [search.banner, search.bannerHora, search.bannerPaciente, fecha, navigate]);
@@ -100,10 +178,10 @@ function Dashboard() {
     }
   }, [banner]);
 
-  // Detect sin_cubrir turnos for S10 banner
+  // Detect sin_cubrir turnos for S10 banner (Bug 10: skip dismissed)
   useEffect(() => {
     const sinCubrir = data.turnos.find(
-      (t: TurnoRow) => t.status === "sin_cubrir" && !banner
+      (t: TurnoRow) => t.status === "sin_cubrir" && !banner && !dismissedBanners.has(t.id)
     );
     if (sinCubrir) {
       setBanner({
@@ -112,7 +190,7 @@ function Dashboard() {
         turnoId: sinCubrir.id,
       });
     }
-  }, [data.turnos]);
+  }, [data.turnos, dismissedBanners]);
 
   // Poll for expirations every 30s
   useEffect(() => {
@@ -128,6 +206,23 @@ function Dashboard() {
     }, 30000);
     return () => clearInterval(interval);
   }, [router]);
+
+  // Bug 1: Search pacientes when typing
+  useEffect(() => {
+    if (!assignModal) return;
+    const timer = setTimeout(async () => {
+      setAssignLoading(true);
+      try {
+        const results = await searchPacientes({ data: { query: assignSearch } });
+        setAssignResults(results);
+      } catch {
+        setAssignResults([]);
+      } finally {
+        setAssignLoading(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [assignSearch, assignModal]);
 
   const goToDate = (newFecha: string) => {
     navigate({ search: { fecha: newFecha } });
@@ -151,25 +246,37 @@ function Dashboard() {
     return { total, confirmados, caidos, cubiertos };
   }, [data.turnos]);
 
+  // Bug 11: Show confirmation dialog before canceling
+  const requestCancel = (turno: TurnoRow) => {
+    const nombre = turno.paciente ? `${turno.paciente.nombre} ${turno.paciente.apellido}` : "este paciente";
+    setConfirmDialog({ turnoId: turno.id, nombre, hora: turno.hora.slice(0, 5) });
+  };
+
   const handleCancelar = async (turnoId: string) => {
+    setConfirmDialog(null);
     setCancelingId(turnoId);
     try {
       await cancelarTurno({ data: { turnoId } });
+      toast.success("Turno cancelado. Buscando reemplazo...");
       router.invalidate();
     } catch (e) {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
       console.error(e);
     } finally {
       setCancelingId(null);
     }
   };
 
+  // Bug 6: Reintentar connected to cancelarTurno
   const handleReintentar = useCallback(async (turnoId: string) => {
     setBanner(null);
     setCancelingId(turnoId);
     try {
       await cancelarTurno({ data: { turnoId } });
+      toast.success("Reintentando búsqueda de reemplazo...");
       router.invalidate();
     } catch (e) {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
       console.error(e);
     } finally {
       setCancelingId(null);
@@ -180,18 +287,48 @@ function Dashboard() {
     setBanner(null);
     try {
       await marcarLibre({ data: { turnoId } });
+      toast.success("Turno marcado como libre.");
       router.invalidate();
     } catch (e) {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
       console.error(e);
     }
   }, [router]);
+
+  // Bug 10: Dismiss and persist
+  const handleDismissBanner = useCallback(() => {
+    if (banner?.turnoId) {
+      const newDismissed = new Set(dismissedBanners);
+      newDismissed.add(banner.turnoId);
+      setDismissedBanners(newDismissed);
+      try {
+        sessionStorage.setItem("turnook_dismissed_banners", JSON.stringify([...newDismissed]));
+      } catch {}
+    }
+    setBanner(null);
+  }, [banner, dismissedBanners]);
+
+  // Bug 1: Handle assignment
+  const handleAssign = async () => {
+    if (!assignModal || !selectedPaciente) return;
+    try {
+      await asignarPaciente({ data: { turnoId: assignModal.turnoId, pacienteId: selectedPaciente } });
+      toast.success("Paciente asignado al turno.");
+      setAssignModal(null);
+      setAssignSearch("");
+      setSelectedPaciente(null);
+      router.invalidate();
+    } catch {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
+    }
+  };
 
   const medicoLabel = data.medico
     ? `Dr. ${data.medico.nombre} ${data.medico.apellido} · ${data.medico.especialidad}`
     : "";
 
   return (
-    <AppLayout rightPanel={<DashboardPanel waitlist={data.waitlist} turnos={data.turnos} />}>
+    <AppLayout rightPanel={<DashboardPanel waitlist={data.waitlist} turnos={data.turnos} monthlyMetrics={data.monthlyMetrics} />}>
       {/* S09 Banner — Turno cubierto */}
       {banner?.type === "cubierto" && (
         <div className="mb-3 flex items-center justify-between rounded-lg border border-status-covered bg-status-covered-bg px-4 py-3 animate-in fade-in slide-in-from-top-2">
@@ -240,7 +377,7 @@ function Dashboard() {
               Marcar como libre
             </button>
             <button
-              onClick={() => setBanner(null)}
+              onClick={handleDismissBanner}
               className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
             >
               Ignorar
@@ -249,106 +386,175 @@ function Dashboard() {
         </div>
       )}
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-base font-medium text-foreground">Agenda del día</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {formatDate(fecha)} · {data.turnos.length} turnos totales
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => goToDate(addDays(fecha, -1))}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted"
-          >
-            ‹
-          </button>
-          <button
-            onClick={() => goToDate(new Date().toISOString().split("T")[0])}
-            className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
-              isToday(fecha)
-                ? "border-teal bg-teal-lighter text-teal-dark"
-                : "border-border bg-card text-foreground hover:bg-muted"
-            }`}
-          >
-            Hoy
-          </button>
-          <button
-            onClick={() => goToDate(addDays(fecha, 1))}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted"
-          >
-            ›
-          </button>
-        </div>
-      </div>
+      {/* Bug 2: Weekend message */}
+      {data.isWeekend ? (
+        <>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-base font-medium text-foreground">Agenda del día</h1>
+              <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(fecha)}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => goToDate(addDays(fecha, -1))} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted">‹</button>
+              <button onClick={() => goToDate(new Date().toISOString().split("T")[0])} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${isToday(fecha) ? "border-teal bg-teal-lighter text-teal-dark" : "border-border bg-card text-foreground hover:bg-muted"}`}>Hoy</button>
+              <button onClick={() => goToDate(addDays(fecha, 1))} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted">›</button>
+            </div>
+          </div>
+          <div className="mt-8 flex flex-col items-center justify-center py-16 text-center">
+            <div className="text-4xl mb-3">🏖️</div>
+            <p className="text-sm font-medium text-muted-foreground">No hay atención este día</p>
+            <p className="mt-1 text-xs text-muted-foreground">Sábados y domingos no se atiende</p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-base font-medium text-foreground">Agenda del día</h1>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatDate(fecha)} · {data.turnos.length} turnos totales
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => goToDate(addDays(fecha, -1))} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted">‹</button>
+              <button onClick={() => goToDate(new Date().toISOString().split("T")[0])} className={`rounded-md border px-2.5 py-1 text-xs font-medium ${isToday(fecha) ? "border-teal bg-teal-lighter text-teal-dark" : "border-border bg-card text-foreground hover:bg-muted"}`}>Hoy</button>
+              <button onClick={() => goToDate(addDays(fecha, 1))} className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted">›</button>
+            </div>
+          </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <MetricCard label="Turnos confirmados" value={metrics.confirmados} sub={`de ${metrics.total} totales`} />
-        <MetricCard label="Caídos hoy" value={metrics.caidos} sub="" valueColor="pending" />
-        <MetricCard label="Recuperados hoy" value={metrics.cubiertos} sub={`$${(metrics.cubiertos * 40000).toLocaleString("es-AR")} recuperados`} valueColor="teal" />
-        <MetricCard label="En proceso" value={data.turnos.filter((t: TurnoRow) => t.status === "en_proceso").length} sub="Buscando reemplazo" valueColor="default" />
-      </div>
+          <div className="mt-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            <MetricCard label="Turnos confirmados" value={metrics.confirmados} sub={`de ${metrics.total} totales`} />
+            <MetricCard label="Caídos hoy" value={metrics.caidos} sub="" valueColor="pending" />
+            <MetricCard label="Recuperados hoy" value={metrics.cubiertos} sub={`$${(metrics.cubiertos * 40000).toLocaleString("es-AR")} recuperados`} valueColor="teal" />
+            <MetricCard label="En proceso" value={data.turnos.filter((t: TurnoRow) => t.status === "en_proceso").length} sub="Buscando reemplazo" valueColor="default" />
+          </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <span className="text-[13px] font-medium text-foreground">Turnos</span>
-          <div className="flex gap-1.5">
-            {([["all", "Todos"], ["fallen", "Caídos"], ["process", "En proceso"]] as const).map(
-              ([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                    filter === key
-                      ? "border-teal bg-teal-lighter text-teal-dark"
-                      : "border-border text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {label}
-                </button>
-              )
+          <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <span className="text-[13px] font-medium text-foreground">Turnos</span>
+              <div className="flex gap-1.5">
+                {([["all", "Todos"], ["fallen", "Caídos"], ["process", "En proceso"]] as const).map(
+                  ([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setFilter(key)}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+                        filter === key
+                          ? "border-teal bg-teal-lighter text-teal-dark"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {filteredTurnos.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No hay turnos con este filtro
+              </div>
+            ) : (
+              filteredTurnos.map((turno: TurnoRow) => {
+                const uiStatus = statusDbToUi[turno.status] || "free";
+                const accent = accentMap[uiStatus];
+                const pacienteName = turno.paciente
+                  ? `${turno.paciente.nombre} ${turno.paciente.apellido}`
+                  : turno.status === "cubierto" && turno.cubierto_por
+                    ? `${turno.cubierto_por.nombre} ${turno.cubierto_por.apellido}`
+                    : turno.status === "libre" ? "—" : "Sin paciente";
+
+                const detail = buildDetail(turno);
+
+                return (
+                  <div
+                    key={turno.id}
+                    className="flex items-center border-b border-border last:border-b-0 hover:bg-muted/50"
+                  >
+                    <div className="w-[60px] shrink-0 py-3 pl-4 text-xs font-medium text-foreground">
+                      {turno.hora.slice(0, 5)}
+                    </div>
+                    <div className={`h-12 w-[3px] shrink-0 ${accent}`} />
+                    <div className="min-w-0 flex-1 px-3.5 py-2.5">
+                      <div className="truncate text-[13px] font-medium text-foreground">{pacienteName}</div>
+                      <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{detail}</div>
+                    </div>
+                    <div className="shrink-0 px-3">
+                      <StatusBadge status={uiStatus} />
+                    </div>
+                    <div className="shrink-0 pr-3.5">
+                      <TurnoActions
+                        turno={turno}
+                        uiStatus={uiStatus}
+                        onCancel={requestCancel}
+                        onAssign={(turnoId) => { setAssignModal({ turnoId }); setAssignSearch(""); setSelectedPaciente(null); }}
+                        canceling={cancelingId === turno.id}
+                      />
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
-        </div>
+        </>
+      )}
 
-        {filteredTurnos.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No hay turnos con este filtro
+      {/* Bug 11: Cancel confirmation dialog */}
+      <Dialog open={!!confirmDialog} onOpenChange={() => setConfirmDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Cancelar turno?</DialogTitle>
+            <DialogDescription>
+              ¿Cancelar el turno de {confirmDialog?.nombre} a las {confirmDialog?.hora}? Esta acción iniciará la búsqueda de reemplazo automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Volver</Button>
+            <Button variant="destructive" onClick={() => confirmDialog && handleCancelar(confirmDialog.turnoId)}>Sí, cancelar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bug 1: Patient assignment modal */}
+      <Dialog open={!!assignModal} onOpenChange={() => { setAssignModal(null); setAssignSearch(""); setSelectedPaciente(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Asignar paciente</DialogTitle>
+            <DialogDescription>Buscá y seleccioná un paciente para este turno.</DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Buscar por nombre o apellido..."
+            value={assignSearch}
+            onChange={(e) => setAssignSearch(e.target.value)}
+            autoFocus
+          />
+          <div className="max-h-48 overflow-y-auto rounded-md border border-border">
+            {assignLoading ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">Buscando...</div>
+            ) : assignResults.length === 0 ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">Sin resultados</div>
+            ) : (
+              assignResults.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPaciente(p.id)}
+                  className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted ${
+                    selectedPaciente === p.id ? "bg-teal-lighter" : ""
+                  }`}
+                >
+                  <span className="font-medium text-foreground">{p.apellido}, {p.nombre}</span>
+                  <span className="text-xs text-muted-foreground">{p.obra_social || "Particular"}</span>
+                </button>
+              ))
+            )}
           </div>
-        ) : (
-          filteredTurnos.map((turno: TurnoRow) => {
-            const uiStatus = statusDbToUi[turno.status] || "free";
-            const accent = accentMap[uiStatus];
-            const pacienteName = turno.paciente
-              ? `${turno.paciente.nombre} ${turno.paciente.apellido}`
-              : turno.status === "libre" ? "—" : "Turno libre";
-
-            const detail = buildDetail(turno);
-
-            return (
-              <div
-                key={turno.id}
-                className="flex items-center border-b border-border last:border-b-0 hover:bg-muted/50"
-              >
-                <div className="w-[60px] shrink-0 py-3 pl-4 text-xs font-medium text-foreground">
-                  {turno.hora.slice(0, 5)}
-                </div>
-                <div className={`h-12 w-[3px] shrink-0 ${accent}`} />
-                <div className="min-w-0 flex-1 px-3.5 py-2.5">
-                  <div className="truncate text-[13px] font-medium text-foreground">{pacienteName}</div>
-                  <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{detail}</div>
-                </div>
-                <div className="shrink-0 px-3">
-                  <StatusBadge status={uiStatus} />
-                </div>
-                <div className="shrink-0 pr-3.5">
-                  <TurnoActions turno={turno} uiStatus={uiStatus} onCancel={handleCancelar} canceling={cancelingId === turno.id} />
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAssignModal(null); setAssignSearch(""); setSelectedPaciente(null); }}>Cancelar</Button>
+            <Button onClick={handleAssign} disabled={!selectedPaciente}>Confirmar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
@@ -375,11 +581,13 @@ function TurnoActions({
   turno,
   uiStatus,
   onCancel,
+  onAssign,
   canceling,
 }: {
   turno: TurnoRow;
   uiStatus: TurnoStatus;
-  onCancel: (id: string) => void;
+  onCancel: (turno: TurnoRow) => void;
+  onAssign: (turnoId: string) => void;
   canceling: boolean;
 }) {
   if (uiStatus === "process") {
@@ -397,7 +605,7 @@ function TurnoActions({
   if (uiStatus === "confirmed" || uiStatus === "pending") {
     return (
       <button
-        onClick={() => onCancel(turno.id)}
+        onClick={() => onCancel(turno)}
         disabled={canceling}
         className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted disabled:opacity-50"
       >
@@ -420,15 +628,22 @@ function TurnoActions({
 
   if (uiStatus === "fallen") {
     return (
-      <button className="rounded-md border border-teal bg-teal-lighter px-2.5 py-1 text-[11px] text-teal-dark whitespace-nowrap">
+      <Link
+        to="/notificaciones/$turnoId"
+        params={{ turnoId: turno.id }}
+        className="rounded-md border border-teal bg-teal-lighter px-2.5 py-1 text-[11px] text-teal-dark whitespace-nowrap"
+      >
         Reintentar
-      </button>
+      </Link>
     );
   }
 
   if (uiStatus === "free") {
     return (
-      <button className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted">
+      <button
+        onClick={() => onAssign(turno.id)}
+        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted"
+      >
         + Asignar
       </button>
     );
@@ -437,7 +652,7 @@ function TurnoActions({
   return null;
 }
 
-function DashboardPanel({ waitlist, turnos }: { waitlist: WaitlistRow[]; turnos: TurnoRow[] }) {
+function DashboardPanel({ waitlist, turnos, monthlyMetrics }: { waitlist: WaitlistRow[]; turnos: TurnoRow[]; monthlyMetrics: MonthlyMetrics }) {
   const enProceso = turnos.filter((t) => t.status === "en_proceso");
   const cubiertos = turnos.filter((t) => t.status === "cubierto");
 
@@ -493,9 +708,7 @@ function DashboardPanel({ waitlist, turnos }: { waitlist: WaitlistRow[]; turnos:
               <div className="text-xs font-medium text-status-process">
                 Turno {t.hora.slice(0, 5)} — buscando paciente
               </div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">
-                Notificando lista de espera
-              </div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground">Notificando lista de espera</div>
               <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-border">
                 <div className="h-full w-[55%] rounded-full bg-status-process animate-pulse-soft" />
               </div>
@@ -515,16 +728,16 @@ function DashboardPanel({ waitlist, turnos }: { waitlist: WaitlistRow[]; turnos:
         </div>
       )}
 
-      {/* Monthly stats */}
+      {/* Bug 7: Monthly stats from DB */}
       <div>
         <div className="mb-2.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Resumen del mes
         </div>
         {[
-          { label: "Turnos caídos", value: "38" },
-          { label: "Recuperados", value: "14", green: true },
-          { label: "Tasa de recupero", value: "37%", green: true },
-          { label: "$ recuperado", value: "$560.000", green: true },
+          { label: "Turnos caídos", value: String(monthlyMetrics.caidos) },
+          { label: "Recuperados", value: String(monthlyMetrics.recuperados), green: true },
+          { label: "Tasa de recupero", value: `${monthlyMetrics.tasa}%`, green: true },
+          { label: "$ recuperado", value: `$${monthlyMetrics.montoRecuperado.toLocaleString("es-AR")}`, green: true },
         ].map((stat) => (
           <div key={stat.label} className="flex justify-between border-b border-border py-1.5 text-xs last:border-b-0">
             <span className="text-muted-foreground">{stat.label}</span>

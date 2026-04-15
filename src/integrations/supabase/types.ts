@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      configuracion: {
+        Row: {
+          consultorio_id: string
+          created_at: string
+          duracion_turno: number
+          hora_fin: string
+          hora_inicio: string
+          id: string
+          timer_minutos: number
+          updated_at: string
+          ventana_horaria: number
+        }
+        Insert: {
+          consultorio_id: string
+          created_at?: string
+          duracion_turno?: number
+          hora_fin?: string
+          hora_inicio?: string
+          id?: string
+          timer_minutos?: number
+          updated_at?: string
+          ventana_horaria?: number
+        }
+        Update: {
+          consultorio_id?: string
+          created_at?: string
+          duracion_turno?: number
+          hora_fin?: string
+          hora_inicio?: string
+          id?: string
+          timer_minutos?: number
+          updated_at?: string
+          ventana_horaria?: number
+        }
+        Relationships: []
+      }
       consultorios: {
         Row: {
           created_at: string

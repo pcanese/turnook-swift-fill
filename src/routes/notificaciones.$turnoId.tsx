@@ -1,17 +1,47 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppTopbar } from "@/components/AppTopbar";
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   getNotificaciones,
   confirmarTurno,
   procesarExpiraciones,
+  notificarMasPacientes,
+  pausarBusqueda,
+  initNotificaciones,
   type NotificacionRow,
   type TurnoNotifContext,
 } from "@/utils/notificaciones.functions";
+import { marcarLibre } from "@/utils/dashboard.functions";
 
 export const Route = createFileRoute("/notificaciones/$turnoId")({
   loader: ({ params }) => getNotificaciones({ data: { turnoId: params.turnoId } }),
   component: NotificationLog,
+  pendingComponent: () => (
+    <div className="flex min-h-screen flex-col">
+      <AppTopbar backLink={{ label: "Agenda", href: "/" }} />
+      <div className="p-5 space-y-4">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    </div>
+  ),
+  errorComponent: ({ error, reset }) => (
+    <div className="flex min-h-screen flex-col">
+      <AppTopbar backLink={{ label: "Agenda", href: "/" }} />
+      <div className="flex flex-col items-center justify-center py-16">
+        <p className="text-sm text-destructive">No se pudieron cargar los datos.</p>
+        <button
+          onClick={reset}
+          className="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Reintentar
+        </button>
+      </div>
+    </div>
+  ),
   head: () => ({
     meta: [
       { title: "TurnoOk — Log de notificaciones" },
@@ -52,6 +82,21 @@ function NotificationLog() {
   const navigate = useNavigate();
   const [data, setData] = useState(initialData);
   const { turno, notificaciones } = data;
+  const [initializing, setInitializing] = useState(false);
+
+  // Bug 5: Auto-init notifications if en_proceso with no notifications
+  useEffect(() => {
+    if (turno?.status === "en_proceso" && notificaciones.length === 0 && !initializing) {
+      setInitializing(true);
+      initNotificaciones({ data: { turnoId } })
+        .then(async () => {
+          const fresh = await getNotificaciones({ data: { turnoId } });
+          setData(fresh);
+        })
+        .catch((e) => console.error("Init error:", e))
+        .finally(() => setInitializing(false));
+    }
+  }, [turno?.status, notificaciones.length, turnoId, initializing]);
 
   // Poll every 3 seconds + check expirations
   useEffect(() => {
@@ -80,6 +125,8 @@ function NotificationLog() {
 
   const isCovered = turno?.status === "cubierto";
   const isSinCubrir = turno?.status === "sin_cubrir";
+  const isCaido = turno?.status === "caido";
+  const isEnProceso = turno?.status === "en_proceso";
   const isExpired = (secondsLeft <= 0 && !isCovered) || isSinCubrir;
   const confirmedNotif = notificaciones.find((n: NotificacionRow) => n.estado === "confirmado");
 
@@ -92,7 +139,7 @@ function NotificationLog() {
   const handleSimConfirm = useCallback(async (notif: NotificacionRow) => {
     try {
       const result = await confirmarTurno({ data: { notificacionId: notif.id, turnoId, pacienteId: notif.paciente.id } });
-      // Redirect to dashboard with success banner
+      toast.success(`Turno confirmado por ${result.pacienteNombre}`);
       navigate({
         to: "/",
         search: {
@@ -103,10 +150,48 @@ function NotificationLog() {
         } as any,
       });
     } catch (e) {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
       console.error("Error confirming:", e);
     }
   }, [turnoId, turno?.fecha, navigate]);
 
+  // Bug 3: Manual action handlers
+  const handleNotificarMas = useCallback(async () => {
+    try {
+      const result = await notificarMasPacientes({ data: { turnoId } });
+      if (result.notificaciones === 0) {
+        toast.error("No hay más pacientes disponibles en la lista de espera.");
+      } else {
+        toast.success(`${result.notificaciones} pacientes notificados.`);
+      }
+      const fresh = await getNotificaciones({ data: { turnoId } });
+      setData(fresh);
+    } catch {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
+    }
+  }, [turnoId]);
+
+  const handlePausar = useCallback(async () => {
+    try {
+      await pausarBusqueda({ data: { turnoId } });
+      toast.success("Búsqueda pausada.");
+      navigate({ to: "/", search: { fecha: turno?.fecha || new Date().toISOString().split("T")[0] } });
+    } catch {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
+    }
+  }, [turnoId, turno?.fecha, navigate]);
+
+  const handleMarcarLibre = useCallback(async () => {
+    try {
+      await marcarLibre({ data: { turnoId } });
+      toast.success("Turno marcado como libre.");
+      navigate({ to: "/", search: { fecha: turno?.fecha || new Date().toISOString().split("T")[0] } });
+    } catch {
+      toast.error("Ocurrió un error. Intentá de nuevo.");
+    }
+  }, [turnoId, turno?.fecha, navigate]);
+
+  // Bug 4: Real patient name
   const originalName = turno?.paciente_original
     ? `${turno.paciente_original.nombre} ${turno.paciente_original.apellido}`
     : "Paciente";
@@ -115,17 +200,35 @@ function NotificationLog() {
     ? `Turno cubierto por ${confirmedNotif?.paciente.nombre} ${confirmedNotif?.paciente.apellido[0]}.`
     : isSinCubrir
       ? "Sin cubrir — nadie confirmó"
-      : isExpired
-        ? "Timer expirado — sin respuesta"
-        : "Buscando reemplazo...";
+      : isCaido
+        ? "Búsqueda pausada"
+        : isExpired
+          ? "Timer expirado — sin respuesta"
+          : "Buscando reemplazo...";
 
   const statusClass = isCovered
     ? "border-status-covered bg-status-covered-bg text-status-covered"
-    : isExpired || isSinCubrir
+    : isExpired || isSinCubrir || isCaido
       ? "border-status-fallen bg-status-fallen-bg text-status-fallen"
       : "border-status-process bg-status-process-bg text-status-process";
 
   const logs = buildLogs(notificaciones, turno);
+
+  // Bug 5: Show initializing state
+  if (initializing) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <AppTopbar backLink={{ label: "Agenda", href: "/" }} />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <div className="mb-2 text-lg">🔍</div>
+            <p className="text-sm font-medium text-muted-foreground">Iniciando búsqueda...</p>
+            <p className="mt-1 text-xs text-muted-foreground">Buscando pacientes con opt-in en la lista de espera</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -185,13 +288,13 @@ function NotificationLog() {
               <span className="text-[11px] text-muted-foreground">10 min</span>
             </div>
             <div className={`text-center text-[28px] font-medium tabular-nums ${isCovered ? "text-status-covered" : secondsLeft < 120 ? "text-status-fallen" : "text-foreground"}`}>
-              {isCovered ? "✓" : isSinCubrir ? "✕" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
+              {isCovered ? "✓" : isSinCubrir || isCaido ? "✕" : `${minutes}:${seconds.toString().padStart(2, "0")}`}
             </div>
             <div className="mb-1.5 mt-2 h-[5px] overflow-hidden rounded-full bg-muted">
               <div className={`h-full rounded-full transition-all duration-500 ${isCovered ? "bg-status-covered" : timerColor}`} style={{ width: `${isCovered ? 100 : timerPercent}%` }} />
             </div>
             <div className="text-center text-[11px] text-muted-foreground">
-              {isCovered ? "Turno cubierto" : isSinCubrir ? "Sin cubrir" : isExpired ? "Timer expirado" : "Si nadie confirma, se notifica al médico"}
+              {isCovered ? "Turno cubierto" : isSinCubrir ? "Sin cubrir" : isCaido ? "Búsqueda pausada" : isExpired ? "Timer expirado" : "Si nadie confirma, se notifica al médico"}
             </div>
           </div>
 
@@ -216,17 +319,36 @@ function NotificationLog() {
             </div>
           </div>
 
-          {/* Manual actions */}
+          {/* Bug 3 + 13: Contextual manual actions */}
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="mb-2.5 text-xs font-medium text-foreground">Acciones manuales</div>
-            {["+ Notificar más pacientes", "Pausar búsqueda", "Marcar como libre"].map((label) => (
+            {/* Always show "Notificar más" unless covered */}
+            {!isCovered && (
               <button
-                key={label}
+                onClick={handleNotificarMas}
+                className="mb-1.5 w-full rounded-md border border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+              >
+                + Notificar más pacientes
+              </button>
+            )}
+            {/* Bug 13: Only show "Pausar" when en_proceso */}
+            {isEnProceso && (
+              <button
+                onClick={handlePausar}
+                className="mb-1.5 w-full rounded-md border border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+              >
+                Pausar búsqueda
+              </button>
+            )}
+            {/* Always show "Marcar como libre" unless covered */}
+            {!isCovered && (
+              <button
+                onClick={handleMarcarLibre}
                 className="mb-1.5 w-full rounded-md border border-border px-3 py-2 text-left text-xs text-muted-foreground transition-colors last:mb-0 hover:bg-muted"
               >
-                {label}
+                Marcar como libre
               </button>
-            ))}
+            )}
           </div>
         </div>
       </div>
