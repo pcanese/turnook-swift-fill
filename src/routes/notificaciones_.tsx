@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { getHistorialNotificaciones } from "@/utils/notificaciones.functions";
 
-export const Route = createFileRoute("/notificaciones")({
+export const Route = createFileRoute("/notificaciones_")({
   loader: () => getHistorialNotificaciones(),
   component: NotificacionesHistorialPage,
   head: () => ({
