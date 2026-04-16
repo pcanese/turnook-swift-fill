@@ -13,6 +13,7 @@ export type TurnoRow = {
   notas: string | null;
   cancelado_at: string | null;
   cubierto_at: string | null;
+  has_active_notifs: boolean;
   paciente: { id: string; nombre: string; apellido: string; obra_social: string | null } | null;
   paciente_original: { nombre: string; apellido: string } | null;
   cubierto_por: { nombre: string; apellido: string } | null;
