@@ -583,6 +583,14 @@ function buildDetail(turno: TurnoRow): string {
   return parts.join(" · ") || "Sin turno asignado";
 }
 
+function isTurnoFuture(turno: TurnoRow): boolean {
+  const now = new Date();
+  const [h, m] = turno.hora.split(":").map(Number);
+  const turnoTime = new Date(turno.fecha + "T00:00:00");
+  turnoTime.setHours(h, m, 0, 0);
+  return turnoTime > now;
+}
+
 function TurnoActions({
   turno,
   uiStatus,
@@ -620,6 +628,19 @@ function TurnoActions({
     );
   }
 
+  // Covered turnos: show cancel if still in the future
+  if (uiStatus === "covered" && isTurnoFuture(turno)) {
+    return (
+      <button
+        onClick={() => onCancel(turno)}
+        disabled={canceling}
+        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted disabled:opacity-50"
+      >
+        {canceling ? "Cancelando..." : "Cancelar"}
+      </button>
+    );
+  }
+
   if (uiStatus === "fallen" && turno.status === "sin_cubrir") {
     return (
       <Link
@@ -628,6 +649,18 @@ function TurnoActions({
         className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground whitespace-nowrap hover:bg-muted"
       >
         Ver detalle
+      </Link>
+    );
+  }
+
+  if (uiStatus === "caido") {
+    return (
+      <Link
+        to="/notificaciones/$turnoId"
+        params={{ turnoId: turno.id }}
+        className="rounded-md border border-teal bg-teal-lighter px-2.5 py-1 text-[11px] text-teal-dark whitespace-nowrap"
+      >
+        Reintentar
       </Link>
     );
   }
