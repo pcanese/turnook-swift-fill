@@ -236,9 +236,9 @@ function Dashboard() {
 
   const filteredTurnos = useMemo(() => {
     return data.turnos.filter((t: TurnoRow) => {
-      const uiStatus = statusDbToUi[t.status] || "free";
+      const uiStatus = getTurnoUiStatus(t);
       if (filter === "all") return true;
-      if (filter === "fallen") return uiStatus === "fallen";
+      if (filter === "fallen") return uiStatus === "fallen" || uiStatus === "caido";
       if (filter === "process") return uiStatus === "process";
       return true;
     });
@@ -463,7 +463,7 @@ function Dashboard() {
               </div>
             ) : (
               filteredTurnos.map((turno: TurnoRow) => {
-                const uiStatus = statusDbToUi[turno.status] || "free";
+                const uiStatus = getTurnoUiStatus(turno);
                 const accent = accentMap[uiStatus];
                 const pacienteName = turno.paciente
                   ? `${turno.paciente.nombre} ${turno.paciente.apellido}`
