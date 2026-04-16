@@ -417,6 +417,22 @@ function PatientTracker({
     "bg-status-pending-bg text-status-pending",
   ];
 
+  // Auto-confirm countdown
+  const [simCountdown, setSimCountdown] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (simCountdown === null || simCountdown <= 0) return;
+    const timer = setTimeout(() => setSimCountdown(simCountdown - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [simCountdown]);
+
+  useEffect(() => {
+    if (simCountdown === 0) {
+      onSimConfirm(notif);
+      setSimCountdown(null);
+    }
+  }, [simCountdown, notif, onSimConfirm]);
+
   return (
     <div
       className={`mb-2.5 rounded-xl border bg-card p-4 transition-all ${
@@ -480,14 +496,28 @@ function PatientTracker({
         </div>
       )}
 
-      {/* Mock confirm button (for testing) */}
+      {/* Mock confirm button with 5s countdown */}
       {!isCovered && notif.estado === "enviado" && (
-        <button
-          onClick={() => onSimConfirm(notif)}
-          className="mt-2.5 w-full rounded-md border border-teal bg-teal-lighter px-3 py-1.5 text-xs font-medium text-teal-dark hover:opacity-90"
-        >
-          🧪 Simular confirmación
-        </button>
+        simCountdown !== null ? (
+          <div className="mt-2.5 flex items-center justify-between rounded-md border border-status-process bg-status-process-bg px-3 py-1.5">
+            <span className="text-xs font-medium text-status-process">
+              ⏳ Confirmando en {simCountdown}s...
+            </span>
+            <button
+              onClick={() => setSimCountdown(null)}
+              className="text-[10px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSimCountdown(5)}
+            className="mt-2.5 w-full rounded-md border border-teal bg-teal-lighter px-3 py-1.5 text-xs font-medium text-teal-dark hover:opacity-90"
+          >
+            🧪 Simular confirmación (5s)
+          </button>
+        )
       )}
     </div>
   );
