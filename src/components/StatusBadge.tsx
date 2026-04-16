@@ -2,6 +2,7 @@ const statusMap = {
   confirmed: { label: "Confirmado", className: "badge-confirmed" },
   pending: { label: "Pendiente", className: "badge-pending" },
   fallen: { label: "Sin cubrir", className: "badge-fallen" },
+  caido: { label: "Caído", className: "badge-fallen" },
   process: { label: "En proceso", className: "badge-process" },
   covered: { label: "Cubierto", className: "badge-covered" },
   free: { label: "Libre", className: "badge-free" },

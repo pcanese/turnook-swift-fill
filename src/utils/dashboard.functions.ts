@@ -13,6 +13,7 @@ export type TurnoRow = {
   notas: string | null;
   cancelado_at: string | null;
   cubierto_at: string | null;
+  has_active_notifs: boolean;
   paciente: { id: string; nombre: string; apellido: string; obra_social: string | null } | null;
   paciente_original: { nombre: string; apellido: string } | null;
   cubierto_por: { nombre: string; apellido: string } | null;
@@ -144,8 +145,30 @@ export const getDashboardData = createServerFn({ method: "GET" })
 
     const monthlyMetrics = await fetchMonthlyMetrics(DEMO_MEDICO_ID);
 
+    // Enrich en_proceso turnos with active notification check
+    const rawTurnos = (turnos || []) as any[];
+    const enProcesoIds = rawTurnos.filter((t: any) => t.status === "en_proceso").map((t: any) => t.id);
+    const activeNotifTurnos = new Set<string>();
+
+    if (enProcesoIds.length > 0) {
+      const { data: activeNotifs } = await supabase
+        .from("notificaciones")
+        .select("turno_id")
+        .in("turno_id", enProcesoIds)
+        .in("estado", ["enviado", "entregado", "leido"] as any);
+
+      for (const n of activeNotifs || []) {
+        activeNotifTurnos.add(n.turno_id);
+      }
+    }
+
+    const enrichedTurnos = rawTurnos.map((t: any) => ({
+      ...t,
+      has_active_notifs: activeNotifTurnos.has(t.id),
+    }));
+
     return {
-      turnos: (turnos || []) as unknown as TurnoRow[],
+      turnos: enrichedTurnos as unknown as TurnoRow[],
       waitlist: (waitlist || []) as unknown as WaitlistRow[],
       medico: medico || null,
       fecha,

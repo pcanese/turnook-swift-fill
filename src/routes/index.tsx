@@ -50,17 +50,23 @@ export const Route = createFileRoute("/")({
 const statusDbToUi: Record<string, TurnoStatus> = {
   confirmado: "confirmed",
   pendiente: "pending",
-  caido: "fallen",
+  caido: "caido",
   en_proceso: "process",
   cubierto: "covered",
   libre: "free",
   sin_cubrir: "fallen",
 };
 
+function getTurnoUiStatus(turno: TurnoRow): TurnoStatus {
+  if (turno.status === "en_proceso" && !turno.has_active_notifs) return "caido";
+  return statusDbToUi[turno.status] || "free";
+}
+
 const accentMap: Record<TurnoStatus, string> = {
   confirmed: "accent-confirmed",
   pending: "accent-pending",
   fallen: "accent-fallen",
+  caido: "accent-fallen",
   process: "accent-process",
   covered: "accent-covered",
   free: "accent-free",
@@ -230,9 +236,9 @@ function Dashboard() {
 
   const filteredTurnos = useMemo(() => {
     return data.turnos.filter((t: TurnoRow) => {
-      const uiStatus = statusDbToUi[t.status] || "free";
+      const uiStatus = getTurnoUiStatus(t);
       if (filter === "all") return true;
-      if (filter === "fallen") return uiStatus === "fallen";
+      if (filter === "fallen") return uiStatus === "fallen" || uiStatus === "caido";
       if (filter === "process") return uiStatus === "process";
       return true;
     });
@@ -457,7 +463,7 @@ function Dashboard() {
               </div>
             ) : (
               filteredTurnos.map((turno: TurnoRow) => {
-                const uiStatus = statusDbToUi[turno.status] || "free";
+                const uiStatus = getTurnoUiStatus(turno);
                 const accent = accentMap[uiStatus];
                 const pacienteName = turno.paciente
                   ? `${turno.paciente.nombre} ${turno.paciente.apellido}`
