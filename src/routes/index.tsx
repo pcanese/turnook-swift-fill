@@ -50,17 +50,23 @@ export const Route = createFileRoute("/")({
 const statusDbToUi: Record<string, TurnoStatus> = {
   confirmado: "confirmed",
   pendiente: "pending",
-  caido: "fallen",
+  caido: "caido",
   en_proceso: "process",
   cubierto: "covered",
   libre: "free",
   sin_cubrir: "fallen",
 };
 
+function getTurnoUiStatus(turno: TurnoRow): TurnoStatus {
+  if (turno.status === "en_proceso" && !turno.has_active_notifs) return "caido";
+  return statusDbToUi[turno.status] || "free";
+}
+
 const accentMap: Record<TurnoStatus, string> = {
   confirmed: "accent-confirmed",
   pending: "accent-pending",
   fallen: "accent-fallen",
+  caido: "accent-fallen",
   process: "accent-process",
   covered: "accent-covered",
   free: "accent-free",
