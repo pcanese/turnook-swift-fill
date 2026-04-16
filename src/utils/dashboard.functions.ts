@@ -184,7 +184,7 @@ export const cancelarTurno = createServerFn({ method: "POST" })
 
     const { data: turno, error: turnoError } = await supabase
       .from("turnos")
-      .select("paciente_id, medico_id")
+      .select("paciente_id, medico_id, status, cubierto_por_paciente_id")
       .eq("id", turnoId)
       .single();
 
@@ -196,7 +196,14 @@ export const cancelarTurno = createServerFn({ method: "POST" })
       status: "caido" as const,
       cancelado_at: new Date().toISOString(),
     };
-    if (turno.paciente_id) {
+
+    if (turno.status === "cubierto") {
+      // Canceling a covered turno: the covering patient is the one canceling
+      updatePayload.paciente_original_id = turno.cubierto_por_paciente_id || turno.paciente_id;
+      updatePayload.paciente_id = null;
+      updatePayload.cubierto_por_paciente_id = null;
+      updatePayload.cubierto_at = null;
+    } else if (turno.paciente_id) {
       updatePayload.paciente_original_id = turno.paciente_id;
     }
 
